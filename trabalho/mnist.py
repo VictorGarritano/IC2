@@ -1,10 +1,14 @@
 from __future__ import print_function
+import pickle
 import argparse
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms
+
+iters, accs, losses = [], [], []
+_iter = 1
 
 
 class Net(nn.Module):
@@ -26,18 +30,39 @@ class Net(nn.Module):
         return F.log_softmax(x, dim=1)
 
 def train(args, model, device, train_loader, optimizer, epoch):
+
+    global iters
+    global accs
+    global losses
+    global _iter
+
     model.train()
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
         output = model(data)
         loss = F.nll_loss(output, target)
+
+        # check batch accuracy
+        pred = output.argmax(dim=1, keepdim=True)
+        correct = pred.eq(target.view_as(pred)).sum().item()
+
         loss.backward()
         optimizer.step()
         if batch_idx % args.log_interval == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_idx * len(data), len(train_loader.dataset),
-                100. * batch_idx / len(train_loader), loss.item()))
+            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tAccuracy: {:.3f}'.format(
+                epoch,
+                batch_idx * len(data),
+                len(train_loader.dataset),
+                100. * batch_idx / len(train_loader),
+                loss.item(),
+                100 * correct / len(data)
+            ))
+
+            iters.append(_iter)
+            accs.append(100 * correct / len(data))
+            losses.append(loss.item())
+            _iter += 1
 
 def test(args, model, device, test_loader):
     """
@@ -57,8 +82,11 @@ def test(args, model, device, test_loader):
     test_loss /= len(test_loader.dataset)
 
     print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
-        test_loss, correct, len(test_loader.dataset),
-        100. * correct / len(test_loader.dataset)))
+        test_loss,
+        correct,
+        len(test_loader.dataset),
+        100. * correct / len(test_loader.dataset)
+    ))
 
 def main():
     """
@@ -69,8 +97,8 @@ def main():
                         help='input batch size for training (default: 64)')
     parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
                         help='input batch size for testing (default: 1000)')
-    parser.add_argument('--epochs', type=int, default=10, metavar='N',
-                        help='number of epochs to train (default: 10)')
+    parser.add_argument('--epochs', type=int, default=5, metavar='N',
+                        help='number of epochs to train (default: 5)')
     parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                         help='learning rate (default: 0.01)')
     parser.add_argument('--momentum', type=float, default=0.5, metavar='M',
@@ -116,6 +144,19 @@ def main():
 
     if args.save_model:
         torch.save(model.state_dict(), "mnist_cnn.pt")
+
+    global iters
+    global accs
+    global losses
+
+    with open('iters.pkl', 'wb') as f:
+        pickle.dump(iters, f)
+
+    with open('accs.pkl', 'wb') as f:
+        pickle.dump(accs, f)
+
+    with open('losses.pkl', 'wb') as f:
+        pickle.dump(losses, f)
 
 if __name__ == '__main__':
     main()
